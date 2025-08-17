@@ -205,3 +205,17 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# PromptXpert specific
+outputs/
+mlruns/
+logs/
+models/
+*.pkl
+*.json.bak
+temp_*
+.dspy_cache/
+
+# MLflow
+mlflow_artifacts/
+mlflow.db
