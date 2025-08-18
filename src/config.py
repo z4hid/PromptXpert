@@ -13,7 +13,7 @@ class Config:
     minibatch_size: int = 2
     num_threads: int = 1
     seed: int = 42
-    dataset_csv: str = "data/prompts_dataset.csv"
+    dataset_csv: str = "data/dataset.csv"
     artifacts_dir: str = "artifacts"
     save_state_only: bool = True  # state-only JSON (safer, readable)
     save_whole_program: bool = True  # also persist whole program directory (dspy>=2.6)

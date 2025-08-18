@@ -10,6 +10,7 @@ Modular DSPy-based system for optimizing user prompts using automated teleprompt
 - **Modular Layout**: Clean separation of config, data utils, metrics, LM init, pipeline, inference.
 - **CLI Modes**: Train (optimize & evaluate) or infer (reuse best or a specific saved program).
 - **MLflow Integration**: Logs parameters, metrics, traces (if supported) with optional autologging.
+- **DagsHub Remote Tracking**: Auto-configures MLflow to use your DagsHub repo if env vars present.
 
 ## Directory Structure
 ```
@@ -23,6 +24,7 @@ src/
   metrics.py                # Judge signature + multi-criteria metric
   pipeline.py               # End-to-end compile/eval/save + artifact versioning
   inference.py              # Loading and prompt optimization helpers
+  tracking.py               # MLflow / DagsHub tracking helpers
 artifacts/                  # (Created after first successful train)
   promptxpert_<timestamp>_score<score>.json
   promptxpert_<timestamp>_score<score>_meta.json
@@ -57,7 +59,7 @@ python promptxpert.py --mode train
 ```
 Optional: provide a sample prompt immediately optimized after training and custom dataset:
 ```bash
-python promptxpert.py --mode train --dataset data/prompts_dataset.csv --prompt "Improve: outline a marketing launch plan for an eco-friendly gadget"
+python promptxpert.py --mode train --dataset data/dataset.csv --prompt "Improve: outline a marketing launch plan for an eco-friendly gadget"
 ```
 Artifacts produced in `artifacts/` may include:
 - State-only JSON (readable) if `save_state_only=True`.
@@ -65,6 +67,22 @@ Artifacts produced in `artifacts/` may include:
 - Matching metadata JSON with score, sizes, config, timestamp.
 - `best_program.json` (either a direct state file or a pointer JSON referencing a whole-program dir) + meta.
 - Legacy root `prompt_xpert_program_optimized.json` + `optimization_metadata.json` for backward compatibility.
+
+### Remote Tracking on DagsHub
+Provide three environment variables (typically via `.env` or CI secrets) to enable hosted MLflow without code changes:
+```bash
+export DAGSHUB_REPO_OWNER=z4hid        # your username or org
+export DAGSHUB_REPO_NAME=PromptXpert   # repository name
+export DAGSHUB_TOKEN=***               # DagsHub personal access token
+export MLFLOW_EXPERIMENT_NAME=PromptXpert-Optimization   # optional
+```
+The code (see `src/tracking.py`) will:
+1. Set `MLFLOW_TRACKING_URI` to `https://dagshub.com/<owner>/<repo>.mlflow`.
+2. Configure basic auth via `MLFLOW_TRACKING_USERNAME` / `MLFLOW_TRACKING_PASSWORD`.
+3. Start a parent `pipeline` run with nested `MIPROv2 Compilation` and `Optimized Program Evaluation` runs.
+4. Log final artifacts (`program/`, `best/`) to the parent run.
+
+Disable remote tracking simply by omitting the token (local `./mlruns` will be used instead).
 
 ## Inference
 Use the best stored program automatically:
@@ -131,7 +149,7 @@ Potential future tests: artifact creation, pointer loading, metric monotonicity.
 
 ## Extending
 - Add more evaluation metrics (edit `metrics.py`).
-- Swap model provider (adjust `config.py` + environment variables).
+- Swap model provider (adjust `config.py` + environment variables`).
 - Increase dataset and tune `auto_level` (light/medium/heavy) for more thorough optimization.
 
 ## Troubleshooting

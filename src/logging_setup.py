@@ -1,12 +1,15 @@
 import logging
 import mlflow
 from packaging.version import Version
+from .tracking import init_tracking
 
 logger = logging.getLogger("prompt_xpert")
 logging.basicConfig(level=logging.INFO)
 
 def configure_logging_and_mlflow():
     try:
+        # Initialize tracking (DagsHub or local) before enabling autologging
+        init_tracking()
         if Version(mlflow.__version__) < Version("2.18.0"):
             logger.warning("MLflow >= 2.18.0 is recommended for DSPy tracing support.")
         try:

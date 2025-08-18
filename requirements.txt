@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-telegram-bot
+dspy-ai
+mlflow
+pandas
+tenacity
+python-dotenv
+litellm
+packaging

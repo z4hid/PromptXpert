@@ -12,10 +12,20 @@ from .lm_init import init_lms
 from .data_utils import ensure_dataset, load_examples, split_train_dev
 from .program import PromptXpertProgram
 from .metrics import MultiCriteriaPromptMetric
+from .tracking import init_tracking, base_tags
 
 
 def run_pipeline():
     configure_logging_and_mlflow()
+    # Parent run to unify nested compilation + evaluation runs
+    parent_run = None
+    try:
+        init_tracking()
+        parent_run = mlflow.start_run(run_name="pipeline", nested=False)
+        mlflow.set_tags(base_tags(config))
+    except Exception as e:
+        logger.warning(f"Failed to start parent MLflow run: {e}")
+
     print("Step 1: Initial DSPy program and signature defined.")
 
     ensure_dataset(config.dataset_csv)
@@ -33,11 +43,7 @@ def run_pipeline():
             print(f"  Entry {i+1} (initial_prompt): {example.initial_prompt}")
             print(f"  Entry {i+1} (optimized_prompt): {example.optimized_prompt}")
 
-    try:
-        mlflow.set_experiment("DSPy-Optimization")
-        print("MLflow experiment set to 'DSPy-Optimization'.")
-    except Exception as e:
-        logger.warning(f"MLflow configuration failed: {e}. Proceeding without MLflow tracking.")
+    # (Experiment handled in tracking init; retain graceful fallback)
 
     lm, judge_lm = init_lms()
     metric = MultiCriteriaPromptMetric(judge_lm)
@@ -46,7 +52,7 @@ def run_pipeline():
     student = PromptXpertProgram()
 
     print("\nStep 4: Starting MIPROv2 compilation...")
-    with mlflow.start_run(run_name="MIPROv2 Compilation"):
+    with mlflow.start_run(run_name="MIPROv2 Compilation", nested=True):
         mlflow.log_params(vars(config))
         teleprompter = MIPROv2(
             metric=metric,
@@ -77,7 +83,7 @@ def run_pipeline():
             return None, None
 
     print("\nEvaluating the optimized program...")
-    with mlflow.start_run(run_name="Optimized Program Evaluation"):
+    with mlflow.start_run(run_name="Optimized Program Evaluation", nested=True):
         evaluator = Evaluate(
             devset=devset,
             metric=metric,
@@ -169,6 +175,34 @@ def run_pipeline():
             print(f"Whole program loaded from {whole_saved_path}/")
         except Exception as e:
             logger.error(f"Failed to load whole program: {e}")
+
+    # Log artifacts (in parent run if active)
+    try:
+        if mlflow.active_run() and parent_run:
+            # Need to ensure we are in the parent run context
+            if mlflow.active_run().info.run_id != parent_run.info.run_id:
+                mlflow.end_run()  # end evaluation nested run
+                mlflow.start_run(run_id=parent_run.info.run_id)
+            # Log created artifacts
+            if state_saved and os.path.exists(program_path):
+                mlflow.log_artifact(program_path, artifact_path="program")
+            if os.path.exists(meta_path):
+                mlflow.log_artifact(meta_path, artifact_path="program")
+            best_meta_path = os.path.join(config.artifacts_dir, 'best_program_meta.json')
+            if os.path.exists(best_meta_path):
+                mlflow.log_artifact(best_meta_path, artifact_path="best")
+            best_prog_path = os.path.join(config.artifacts_dir, 'best_program.json')
+            if os.path.exists(best_prog_path):
+                mlflow.log_artifact(best_prog_path, artifact_path="best")
+            mlflow.log_metric("final_average_metric_score", numeric_score)
+    except Exception as e:
+        logger.warning(f"Failed to log artifacts to MLflow: {e}")
+    finally:
+        if parent_run:
+            try:
+                mlflow.end_run()
+            except Exception:
+                pass
 
     print("\nStep 6: Running inference on new prompts.")
     return compiled_program, loaded_program
